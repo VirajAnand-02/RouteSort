@@ -8,10 +8,11 @@ import { query } from '@/lib/db';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { job_id: string } }
+  { params }: { params: Promise<{ job_id: string }> }
 ) {
   try {
-    const jobId = params.job_id;
+    const { job_id } = await params;
+    const jobId = job_id;
 
     // Authenticate user
     const { userId } = await auth();

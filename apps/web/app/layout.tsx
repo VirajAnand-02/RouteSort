@@ -12,9 +12,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Check if Clerk is configured
-  const hasClerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && 
-                      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.startsWith('pk_');
+  // Check if Clerk is properly configured (not mock keys)
+  const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
+  const hasValidClerkKey = clerkKey && 
+                          clerkKey.startsWith('pk_') && 
+                          !clerkKey.includes('mock') &&
+                          clerkKey.length > 10;
   
   return (
     <html lang="en">
@@ -27,7 +30,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        {hasClerkKey ? (
+        {hasValidClerkKey ? (
           <ClerkProvider>
             {children}
           </ClerkProvider>

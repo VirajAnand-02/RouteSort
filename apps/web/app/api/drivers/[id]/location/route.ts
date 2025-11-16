@@ -12,10 +12,11 @@ import { query } from '@/lib/db';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const driverId = parseInt(params.id);
+    const { id } = await params;
+    const driverId = parseInt(id);
 
     // Authenticate user
     const { userId } = await auth();

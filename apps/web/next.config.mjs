@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disable static exports for pages that require authentication
-  experimental: {
-    // This allows the build to complete without Clerk credentials
-  },
+  // Transpile shared packages
+  transpilePackages: ['@routesort/shared'],
 };
 
 export default nextConfig;
