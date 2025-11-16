@@ -1,0 +1,598 @@
+openapi: 3.0.3
+info:
+  title: RouteSort API
+  description: |
+    Production-ready API for the RouteSort waste pickup optimization system.
+    Provides endpoints for pickup requests, driver management, route optimization,
+    and image classification for recycling guidance.
+  version: 1.0.0
+  contact:
+    name: RouteSort Team
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+  - url: https://routesort.vercel.app/api
+    description: Production server
+
+tags:
+  - name: auth
+    description: Authentication and authorization
+  - name: pickups
+    description: Pickup request management
+  - name: drivers
+    description: Driver and fleet management
+  - name: routes
+    description: Route optimization and management
+  - name: images
+    description: Image classification for recycling guidance
+  - name: rewards
+    description: Points and rewards system
+
+components:
+  securitySchemes:
+    ClerkAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Clerk JWT token
+
+  schemas:
+    Coordinate:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    PickupRequest:
+      type: object
+      required: [id, user_id, address, latitude, longitude, waste_type, status, created_at]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        address:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        waste_type:
+          type: string
+          enum: [general, recyclable, organic, bulky, hazardous]
+        description:
+          type: string
+        photo_url:
+          type: string
+          format: uri
+        scheduled_date:
+          type: string
+          format: date
+        time_slot:
+          type: string
+          enum: [morning, afternoon, evening]
+        status:
+          type: string
+          enum: [pending, scheduled, in_progress, completed, cancelled]
+        weight_estimate:
+          type: number
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+        type_guess:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePickupRequest:
+      type: object
+      required: [address, latitude, longitude, waste_type]
+      properties:
+        address:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        waste_type:
+          type: string
+          enum: [general, recyclable, organic, bulky, hazardous]
+        description:
+          type: string
+        photo_url:
+          type: string
+          format: uri
+        scheduled_date:
+          type: string
+          format: date
+        time_slot:
+          type: string
+          enum: [morning, afternoon, evening]
+        weight_estimate:
+          type: number
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+
+    Driver:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        vehicle_number:
+          type: string
+        vehicle_type:
+          type: string
+        capacity_kg:
+          type: integer
+        status:
+          type: string
+          enum: [available, on_route, offline]
+        current_latitude:
+          type: number
+          format: double
+        current_longitude:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+
+    UpdateLocationRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    OptimizeRouteRequest:
+      type: object
+      required: [driver_ids, pickup_ids]
+      properties:
+        driver_ids:
+          type: array
+          items:
+            type: integer
+        pickup_ids:
+          type: array
+          items:
+            type: integer
+        vehicle_capacities:
+          type: object
+          additionalProperties:
+            type: integer
+        max_route_length:
+          type: number
+          description: Maximum route length in km
+        priority_weight:
+          type: number
+          description: Weight for priority pickups (0-1)
+
+    RouteStop:
+      type: object
+      properties:
+        pickup_id:
+          type: integer
+        seq:
+          type: integer
+        eta:
+          type: string
+          format: date-time
+
+    OptimizedRoute:
+      type: object
+      properties:
+        driver_id:
+          type: integer
+        path:
+          type: array
+          items:
+            $ref: '#/components/schemas/Coordinate'
+        stops:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteStop'
+        total_distance:
+          type: number
+          description: Total distance in km
+        estimated_duration:
+          type: number
+          description: Estimated duration in minutes
+
+    OptimizeRouteResponse:
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/OptimizedRoute'
+        stats:
+          type: object
+          properties:
+            total_pickups:
+              type: integer
+            total_distance:
+              type: number
+            average_route_length:
+              type: number
+            unassigned_pickups:
+              type: array
+              items:
+                type: integer
+
+    ClassifyImageResponse:
+      type: object
+      properties:
+        classification:
+          type: string
+          description: Classified item name
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        category:
+          type: string
+        recyclable:
+          type: boolean
+        instructions:
+          type: string
+        job_id:
+          type: string
+          description: Job ID for async processing
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        statusCode:
+          type: integer
+        details:
+          type: object
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange Clerk token for session
+      description: Authenticates user via Clerk and creates/updates user record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clerk_token]
+              properties:
+                clerk_token:
+                  type: string
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                  session_token:
+                    type: string
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /pickups:
+    get:
+      tags: [pickups]
+      summary: List pickup requests
+      description: Returns list of pickup requests with optional filtering
+      security:
+        - ClerkAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, scheduled, in_progress, completed, cancelled]
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of pickup requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PickupRequest'
+              example:
+                - id: 1
+                  user_id: 42
+                  address: "123 Main St, New York, NY"
+                  latitude: 40.7128
+                  longitude: -74.0060
+                  waste_type: "recyclable"
+                  status: "pending"
+                  weight_estimate: 15
+                  priority: 5
+                  created_at: "2024-01-15T10:30:00Z"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: [pickups]
+      summary: Create a new pickup request
+      description: Citizens create pickup requests for waste collection
+      security:
+        - ClerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePickupRequest'
+            example:
+              address: "456 Oak Ave, Brooklyn, NY"
+              latitude: 40.6782
+              longitude: -73.9442
+              waste_type: "recyclable"
+              description: "Mixed plastic and glass bottles"
+              scheduled_date: "2024-01-20"
+              time_slot: "morning"
+              weight_estimate: 10
+              priority: 3
+      responses:
+        '201':
+          description: Pickup request created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickupRequest'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /drivers:
+    get:
+      tags: [drivers]
+      summary: List all drivers
+      description: Returns list of drivers with their current status and location
+      security:
+        - ClerkAuth: []
+      responses:
+        '200':
+          description: List of drivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+              example:
+                - id: 1
+                  user_id: 10
+                  vehicle_number: "TRK-001"
+                  vehicle_type: "compactor"
+                  capacity_kg: 5000
+                  status: "available"
+                  current_latitude: 40.7580
+                  current_longitude: -73.9855
+
+  /drivers/{id}/location:
+    post:
+      tags: [drivers]
+      summary: Update driver location
+      description: Drivers update their current GPS location
+      security:
+        - ClerkAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationRequest'
+            example:
+              latitude: 40.7589
+              longitude: -73.9851
+      responses:
+        '200':
+          description: Location updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  driver:
+                    $ref: '#/components/schemas/Driver'
+
+  /routes/optimize:
+    post:
+      tags: [routes]
+      summary: Optimize routes for drivers
+      description: |
+        Runs CVRP algorithm to optimize pickup routes for specified drivers.
+        Uses greedy + 2-opt heuristic with capacity constraints.
+      security:
+        - ClerkAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OptimizeRouteRequest'
+            example:
+              driver_ids: [1, 2, 3]
+              pickup_ids: [10, 11, 12, 13, 14, 15]
+              vehicle_capacities:
+                "1": 5000
+                "2": 4000
+                "3": 6000
+              max_route_length: 50
+              priority_weight: 0.3
+      responses:
+        '200':
+          description: Optimized routes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizeRouteResponse'
+              example:
+                routes:
+                  - driver_id: 1
+                    path:
+                      - lat: 40.7128
+                        lng: -74.0060
+                      - lat: 40.7580
+                        lng: -73.9855
+                    stops:
+                      - pickup_id: 10
+                        seq: 1
+                        eta: "2024-01-20T09:00:00Z"
+                      - pickup_id: 13
+                        seq: 2
+                        eta: "2024-01-20T09:30:00Z"
+                    total_distance: 15.5
+                    estimated_duration: 45
+                stats:
+                  total_pickups: 6
+                  total_distance: 45.2
+                  average_route_length: 15.1
+                  unassigned_pickups: []
+
+  /images/classify:
+    post:
+      tags: [images]
+      summary: Classify waste image
+      description: |
+        Accepts an image and returns classification result with recycling guidance.
+        Processing is async - returns job_id immediately, poll for results.
+      security:
+        - ClerkAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                user_id:
+                  type: integer
+      responses:
+        '202':
+          description: Image accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassifyImageResponse'
+              example:
+                job_id: "abc-123-def-456"
+                classification: "Processing..."
+                confidence: 0
+        '400':
+          description: Invalid image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /images/classify/{job_id}:
+    get:
+      tags: [images]
+      summary: Get classification result
+      description: Polls for image classification result
+      security:
+        - ClerkAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Classification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassifyImageResponse'
+              example:
+                job_id: "abc-123-def-456"
+                classification: "Plastic Bottle #1"
+                confidence: 0.92
+                category: "Plastic"
+                recyclable: true
+                instructions: "Rinse and remove cap before recycling"
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+security:
+  - ClerkAuth: []

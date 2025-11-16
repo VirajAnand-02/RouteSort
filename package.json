@@ -1,38 +1,31 @@
 {
-  "name": "routesort",
+  "name": "routesort-monorepo",
   "version": "1.0.0",
-  "description": "App to optimize garbage pickup",
-  "main": "index.js",
+  "description": "Production-ready waste pickup optimization system",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspace=apps/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "migrate": "psql $DATABASE_URL -f schema.sql",
+    "seed": "psql $DATABASE_URL -f infra/seed.sql",
+    "docker:up": "docker-compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker-compose -f infra/docker-compose.yml down"
   },
-  "keywords": [],
+  "keywords": ["waste-management", "routing", "optimization", "cvrp"],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "@clerk/nextjs": "^6.35.1",
-    "@types/leaflet": "^1.9.21",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "leaflet": "^1.9.4",
-    "next": "^16.0.3",
-    "pg": "^8.16.3",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-leaflet": "^5.0.0",
-    "typescript": "^5.9.3"
-  },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.17",
-    "@types/pg": "^8.15.6",
-    "autoprefixer": "^10.4.22",
-    "eslint": "^9.39.1",
-    "eslint-config-next": "^16.0.3",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.17"
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.4",
+    "@types/jest": "^29.5.11"
   }
 }

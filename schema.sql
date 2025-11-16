@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   role VARCHAR(50) NOT NULL CHECK (role IN ('citizen', 'driver', 'coordinator')),
   full_name VARCHAR(255),
   phone VARCHAR(50),
+  points_balance INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS pickup_requests (
   scheduled_date DATE,
   time_slot VARCHAR(50),
   status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'scheduled', 'in_progress', 'completed', 'cancelled')),
+  weight_estimate INTEGER,
+  priority INTEGER DEFAULT 5 CHECK (priority >= 1 AND priority <= 10),
+  type_guess VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -83,6 +87,44 @@ CREATE TABLE IF NOT EXISTS recycling_guides (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Rewards and points tracking
+CREATE TABLE IF NOT EXISTS rewards (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL,
+  description TEXT,
+  redeemed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit logs for confirmations and photos
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_id INTEGER NOT NULL,
+  details JSONB,
+  photo_url TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Image classification jobs (for async processing)
+CREATE TABLE IF NOT EXISTS classification_jobs (
+  id VARCHAR(255) PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  image_url TEXT NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  classification VARCHAR(255),
+  confidence DECIMAL(3, 2),
+  category VARCHAR(100),
+  recyclable BOOLEAN,
+  instructions TEXT,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_pickup_requests_user ON pickup_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_pickup_requests_status ON pickup_requests(status);
@@ -91,6 +133,11 @@ CREATE INDEX IF NOT EXISTS idx_routes_driver ON routes(driver_id);
 CREATE INDEX IF NOT EXISTS idx_routes_date ON routes(route_date);
 CREATE INDEX IF NOT EXISTS idx_route_stops_route ON route_stops(route_id);
 CREATE INDEX IF NOT EXISTS idx_users_clerk ON users(clerk_id);
+CREATE INDEX IF NOT EXISTS idx_rewards_user ON rewards(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_classification_jobs_user ON classification_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_classification_jobs_status ON classification_jobs(status);
 
 -- Insert some sample recycling guides
 INSERT INTO recycling_guides (item_name, category, recyclable, instructions) VALUES
