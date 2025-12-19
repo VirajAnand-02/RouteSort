@@ -1,0 +1,199 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- ENUMS ---
+
+enum UserRole {
+  CITIZEN
+  DRIVER
+  COORDINATOR
+}
+
+enum PickupStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PriorityLevel {
+  REGULAR
+  PRIORITY
+}
+
+enum MaterialType {
+  PLASTIC
+  PAPER
+  GLASS
+  METAL
+  ORGANIC
+  ELECTRONIC
+  OTHER
+}
+
+// --- MODELS ---
+
+model User {
+  id         String   @id @default(cuid())
+  externalId String   @unique // Link to Clerk/NextAuth ID
+  email      String   @unique
+  name       String?
+  role       UserRole @default(CITIZEN)
+  avatarUrl  String?
+
+  // Credentials auth (email/password)
+  passwordHash String?
+
+  // Citizen specific
+  pointsBalance    Int   @default(0)
+  totalCarbonSaved Float @default(0.0)
+  address          String?
+  latitude         Float?
+  longitude        Float?
+
+  // Relations
+  pickupRequests PickupRequest[] @relation("CitizenPickups")
+  scans          WasteScan[]
+  redemptions    Redemption[]
+  managedRoute   Route?          @relation("DriverRoute") // For Drivers
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model PickupRequest {
+  id        String @id @default(cuid())
+  citizenId String
+  citizen   User   @relation("CitizenPickups", fields: [citizenId], references: [id])
+
+  status   PickupStatus  @default(PENDING)
+  priority PriorityLevel @default(REGULAR)
+
+  // Location for routing
+  address   String
+  latitude  Float
+  longitude Float
+
+  // Waste Details (for CVRP capacity calculation)
+  estimatedWeight Float // in kg
+  estimatedVolume Float // in liters/m3
+  description     String?
+
+  // Verification
+  pickupPhotoUrl  String? // Photo taken by driver on completion
+  completionNotes String?
+
+  // Relations
+  routeStop RouteStop?
+
+  scheduledDate DateTime
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+model Route {
+  id       String @id @default(cuid())
+  driverId String @unique
+  driver   User   @relation("DriverRoute", fields: [driverId], references: [id])
+
+  status String @default("ACTIVE") // ACTIVE, COMPLETED, PAUSED
+
+  // Vehicle Data (CVRP Constraints)
+  vehicleCapacity Float
+  currentLoad     Float @default(0.0)
+
+  // Metrics
+  totalDistance Float? // in km
+  estimatedTime Int? // in minutes
+
+  // Stops in the route
+  stops RouteStop[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RouteStop {
+  id      String @id @default(cuid())
+  routeId String
+  route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  pickupRequestId String        @unique
+  pickupRequest   PickupRequest @relation(fields: [pickupRequestId], references: [id])
+
+  sequenceOrder Int // The order in which the driver should visit this stop
+  isCompleted   Boolean @default(false)
+
+  arrivalAt   DateTime?
+  departureAt DateTime?
+
+  @@index([routeId, sequenceOrder])
+}
+
+model WasteScan {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  imageUrl     String
+  materialName String // e.g., "Plastic #1 PET"
+  category     MaterialType
+  isRecyclable Boolean
+  confidenceScore Float?
+
+  pointsAwarded Int @default(0)
+
+  createdAt DateTime @default(now())
+}
+
+model Reward {
+  id          String @id @default(cuid())
+  title       String
+  description String
+  pointCost   Int
+  provider    String // Local business name
+  voucherCode String? // If static code
+  inventory   Int @default(-1) // -1 for infinite
+
+  redemptions Redemption[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Redemption {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  rewardId String
+  reward   Reward @relation(fields: [rewardId], references: [id])
+
+  redeemedAt DateTime @default(now())
+  status     String   @default("PENDING") // PENDING, USED, EXPIRED
+}
+
+model GlobalKPI {
+  id                 Int      @id @default(1)
+  totalLandfillSaved Float    @default(0.0)
+  totalCarbonReduced Float    @default(0.0)
+  totalRecycledKg    Float    @default(0.0)
+  lastUpdated        DateTime @updatedAt
+}
