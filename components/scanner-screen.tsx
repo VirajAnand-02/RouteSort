@@ -29,6 +29,7 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [gps, setGps] = useState<null | { lat: number; lng: number; accuracy?: number }>(null)
   const [gpsError, setGpsError] = useState<string | null>(null)
+  const [gpsStatus, setGpsStatus] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [createdRequestId, setCreatedRequestId] = useState<string | null>(null)
 
@@ -149,33 +150,52 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
   useEffect(() => {
     let cancelled = false
 
-    const startGeo = () => {
+    const formatGeoError = (err: unknown) => {
+      const code = (err as any)?.code
+      if (code === 1) return "Location permission denied"
+      if (code === 2) return "Location unavailable (check device location settings)"
+      if (code === 3) return "Location request timed out"
+      return "Unable to get location"
+    }
+
+    const requestLocation = (opts: PositionOptions, isFallback: boolean) => {
       if (typeof navigator === "undefined" || !navigator.geolocation) {
         setGpsError("Geolocation not supported")
+        setGpsStatus(null)
         return
       }
 
       setGpsError(null)
+      setGpsStatus(isFallback ? "Retrying GPS (low accuracy)…" : "Getting GPS…")
+
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (cancelled) return
           setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
           setGpsError(null)
+          setGpsStatus(null)
         },
         (err) => {
           if (cancelled) return
           const code = (err as any)?.code
-          if (code === 1) setGpsError("Location permission denied")
-          else if (code === 2) setGpsError("Location unavailable")
-          else if (code === 3) setGpsError("Location request timed out")
-          else setGpsError("Unable to get location")
+          const message = formatGeoError(err)
+
+          // If high accuracy is timing out, retry with a less strict request.
+          if (code === 3 && !isFallback) {
+            setGpsError("GPS timed out — retrying with low accuracy…")
+            requestLocation({ enableHighAccuracy: false, maximumAge: 30_000, timeout: 60_000 }, true)
+            return
+          }
+
+          setGpsError(message)
+          setGpsStatus(null)
         },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+        opts,
       )
     }
 
     // Grab GPS early to geotag the report.
-    startGeo()
+    requestLocation({ enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 }, false)
 
     return () => {
       cancelled = true
@@ -372,6 +392,12 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
             {gpsError && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                 <p className="text-sm text-destructive">{gpsError}</p>
+              </div>
+            )}
+
+            {gpsStatus && !gpsError && (
+              <div className="rounded-lg border border-border bg-card p-3">
+                <p className="text-sm text-muted-foreground">{gpsStatus}</p>
               </div>
             )}
 
