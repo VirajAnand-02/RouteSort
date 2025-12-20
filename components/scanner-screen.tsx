@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Camera, Upload } from "lucide-react"
@@ -10,6 +10,11 @@ interface ScannerScreenProps {
 }
 
 export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const stopCameraRef = useRef<null | (() => void)>(null)
+
   const [scanned, setScanned] = useState<null | {
     material: string
     recyclable: boolean
@@ -17,7 +22,18 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
     tips: string
   }>(null)
 
-  const materialDatabase = {
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [isStartingCamera, setIsStartingCamera] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [gps, setGps] = useState<null | { lat: number; lng: number; accuracy?: number }>(null)
+  const [gpsError, setGpsError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [createdRequestId, setCreatedRequestId] = useState<string | null>(null)
+
+  const materialDatabase = useMemo(
+    () => ({
     plastic_1: {
       material: "Plastic #1 (PET)",
       recyclable: true,
@@ -48,6 +64,13 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
       category: "Plastic",
       tips: "Not accepted at most facilities. Consider reusing for storage.",
     },
+    }),
+    [],
+  )
+
+  const stopCamera = () => {
+    stopCameraRef.current?.()
+    stopCameraRef.current = null
   }
 
   const handleScan = (type: keyof typeof materialDatabase) => {
@@ -56,6 +79,213 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
 
   const handleAddPoints = () => {
     setScanned(null)
+  }
+
+  useEffect(() => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+  }, [scanned])
+
+  useEffect(() => {
+    if (!isCameraOpen) {
+      stopCamera()
+      setIsStartingCamera(false)
+      return
+    }
+
+    let cancelled = false
+
+    async function start() {
+      if (!videoRef.current) return
+
+      setScanError(null)
+      setIsStartingCamera(true)
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        })
+
+        videoRef.current.srcObject = stream
+
+        stopCameraRef.current = () => {
+          for (const track of stream.getTracks()) {
+            try {
+              track.stop()
+            } catch {
+              // ignore
+            }
+          }
+          if (videoRef.current) videoRef.current.srcObject = null
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unable to open camera"
+
+        // Common cause: not https (except localhost).
+        const isSecureContext = typeof window !== "undefined" && (window.isSecureContext ?? false)
+        setScanError(
+          isSecureContext
+            ? message
+            : "Camera requires a secure context (https or localhost).",
+        )
+        setIsCameraOpen(false)
+      } finally {
+        if (!cancelled) setIsStartingCamera(false)
+      }
+    }
+
+    start()
+
+    return () => {
+      cancelled = true
+      stopCamera()
+    }
+  }, [isCameraOpen])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const startGeo = () => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setGpsError("Geolocation not supported")
+        return
+      }
+
+      setGpsError(null)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return
+          setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
+          setGpsError(null)
+        },
+        (err) => {
+          if (cancelled) return
+          const code = (err as any)?.code
+          if (code === 1) setGpsError("Location permission denied")
+          else if (code === 2) setGpsError("Location unavailable")
+          else if (code === 3) setGpsError("Location request timed out")
+          else setGpsError("Unable to get location")
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+      )
+    }
+
+    // Grab GPS early to geotag the report.
+    startGeo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleUploadClick = () => {
+    setScanError(null)
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelected = async (file: File | null) => {
+    if (!file) return
+    setScanError(null)
+
+    if (file.size > 6 * 1024 * 1024) {
+      setScanError("Image too large (max 6MB)")
+      return
+    }
+
+    setPhotoBlob(file)
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+    setPhotoUrl(URL.createObjectURL(file))
+  }
+
+  const takePhoto = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+
+    const video = videoRef.current
+    const canvas = canvasRef.current
+
+    const width = video.videoWidth || 1280
+    const height = video.videoHeight || 720
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0, width, height)
+
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9),
+    )
+
+    if (!blob) {
+      setScanError("Could not capture photo")
+      return
+    }
+
+    setPhotoBlob(blob)
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+    setPhotoUrl(URL.createObjectURL(blob))
+    setIsCameraOpen(false)
+    stopCamera()
+  }
+
+  const resetPhoto = () => {
+    setPhotoBlob(null)
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+    setPhotoUrl(null)
+    setCreatedRequestId(null)
+    setScanned(null)
+    setScanError(null)
+  }
+
+  const submitReport = async () => {
+    if (!photoBlob) {
+      setScanError("Take or upload a photo first")
+      return
+    }
+    if (!gps) {
+      setScanError(gpsError ?? "Waiting for location…")
+      return
+    }
+
+    setIsSubmitting(true)
+    setScanError(null)
+
+    try {
+      const form = new FormData()
+      form.append("image", photoBlob, "garbage.jpg")
+      form.append("lat", String(gps.lat))
+      form.append("lng", String(gps.lng))
+
+      const res = await fetch("/api/citizen/report", { method: "POST", body: form })
+      const json = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        setScanError(json?.error ?? `Request failed (${res.status})`)
+        return
+      }
+
+      setCreatedRequestId(json?.request?.id ?? null)
+      const scan = json?.scan
+
+      const materialName = typeof scan?.materialName === "string" ? scan.materialName : "Unknown"
+      const category = typeof scan?.category === "string" ? scan.category : "OTHER"
+      const recyclable = Boolean(scan?.isRecyclable)
+      const confidence = typeof scan?.confidenceScore === "number" ? scan.confidenceScore : null
+
+      setScanned({
+        material: materialName,
+        recyclable,
+        category,
+        tips: confidence != null ? `Confidence: ${(confidence * 100).toFixed(0)}%` : "",
+      })
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Failed to submit")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -76,15 +306,103 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
           <>
             {/* Scanner Preview */}
             <div className="bg-gradient-to-b from-primary/20 to-accent/10 rounded-2xl p-8 flex flex-col items-center justify-center min-h-64 border-2 border-dashed border-primary/30">
-              <Camera className="w-12 h-12 text-primary mb-4" />
-              <p className="text-center text-sm text-muted-foreground mb-6">
-                Point your camera at a material to scan its recyclability
-              </p>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                <Camera className="w-4 h-4 mr-2" />
-                Open Camera
-              </Button>
+              {!isCameraOpen ? (
+                <>
+                  <Camera className="w-12 h-12 text-primary mb-4" />
+                  <p className="text-center text-sm text-muted-foreground mb-6">
+                    Take a photo of the garbage. We'll geotag it and classify it.
+                  </p>
+                  <Button
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                    onClick={() => {
+                      setScanError(null)
+                      setIsCameraOpen(true)
+                    }}
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Open Camera
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="w-full max-w-xl">
+                    <div className="w-full overflow-hidden rounded-xl border border-border bg-background">
+                      <video
+                        ref={videoRef}
+                        className="w-full h-auto"
+                        muted
+                        playsInline
+                        autoPlay
+                      />
+                    </div>
+                    <canvas ref={canvasRef} className="hidden" />
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        {isStartingCamera ? "Starting camera…" : "Frame the garbage clearly"}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          className="border-primary text-primary hover:bg-primary/10 bg-transparent"
+                          onClick={() => setIsCameraOpen(false)}
+                          disabled={isStartingCamera}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                          onClick={takePhoto}
+                          disabled={isStartingCamera}
+                        >
+                          Take Photo
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
+
+            {scanError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-sm text-destructive">{scanError}</p>
+              </div>
+            )}
+
+            {gpsError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-sm text-destructive">{gpsError}</p>
+              </div>
+            )}
+
+            {photoUrl && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Photo Preview</p>
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
+                  <img src={photoUrl} alt="Garbage" className="w-full h-auto" />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-primary text-primary hover:bg-primary/10 bg-transparent"
+                    onClick={() => {
+                      resetPhoto()
+                      setIsCameraOpen(true)
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    Retake
+                  </Button>
+                  <Button
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+                    onClick={submitReport}
+                    disabled={isSubmitting || !gps}
+                  >
+                    {isSubmitting ? "Submitting…" : "Send for Classification"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Or upload */}
             <div className="flex items-center gap-3">
@@ -93,12 +411,25 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
               <div className="flex-1 h-px bg-border" />
             </div>
 
-            <Button variant="outline" className="w-full border-primary text-primary hover:bg-primary/10 bg-transparent">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleFileSelected(e.target.files?.[0] ?? null)}
+            />
+
+            <Button
+              variant="outline"
+              className="w-full border-primary text-primary hover:bg-primary/10 bg-transparent"
+              onClick={handleUploadClick}
+              disabled={isCameraOpen}
+            >
               <Upload className="w-4 h-4 mr-2" />
               Upload Photo
             </Button>
 
-            {/* Demo Results */}
+            {/* Demo Results (fallback examples) */}
             <div className="space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase">Scan Results</p>
               <div className="grid gap-2">
@@ -143,37 +474,29 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="bg-background rounded-lg p-4 border border-border">
-                  <p className="text-sm text-foreground leading-relaxed">{scanned.tips}</p>
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {scanned.tips || "Classification complete."}
+                  </p>
                 </div>
 
-                {scanned.recyclable && (
-                  <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
-                    <p className="text-sm font-semibold text-accent">+150 Points</p>
-                    <p className="text-xs text-accent/70 mt-1">For recycling this correctly</p>
+                {createdRequestId && (
+                  <div className="bg-primary/10 border border-primary/20 rounded-lg p-3">
+                    <p className="text-sm font-semibold text-primary">Pickup request created</p>
+                    <p className="text-xs text-muted-foreground mt-1">Request ID: {createdRequestId}</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Action Buttons */}
-            {scanned.recyclable && (
-              <>
-                <Button
-                  onClick={handleAddPoints}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12"
-                >
-                  I'm Recycling This
-                </Button>
-                <p className="text-xs text-center text-muted-foreground">✓ 150 points added to your account</p>
-              </>
-            )}
-
             <Button
-              onClick={() => setScanned(null)}
+              onClick={() => {
+                handleAddPoints()
+                resetPhoto()
+              }}
               variant="outline"
               className="w-full border-primary text-primary hover:bg-primary/10"
             >
-              Scan Another
+              New Report
             </Button>
           </>
         )}

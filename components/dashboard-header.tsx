@@ -4,7 +4,11 @@ import { signOut } from "next-auth/react"
 import { MapPin, Menu, Bell, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-export function DashboardHeader() {
+export function DashboardHeader({
+  currentLocationLabel,
+}: {
+  currentLocationLabel?: string
+}) {
   return (
     <header className="border-b border-border bg-card p-4">
       <div className="flex items-center justify-between max-w-full">
@@ -19,6 +23,15 @@ export function DashboardHeader() {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 text-right">
+            <MapPin className="w-4 h-4 text-primary" />
+            <div>
+              <p className="text-xs text-muted-foreground">Current location</p>
+              <p className="text-sm font-semibold text-foreground">
+                {currentLocationLabel ?? "Downtown Hub"}
+              </p>
+            </div>
+          </div>
           <div className="text-right">
             <p className="text-sm font-semibold text-foreground">Driver ID: DRV-2847</p>
             <p className="text-xs text-muted-foreground">Shift: 08:00 - 16:00</p>

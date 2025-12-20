@@ -1,37 +1,71 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { TrendingUp, TrendingDown } from "lucide-react"
 
-export function KPIDashboard() {
-  const kpis = [
+type CoordinatorKpis = {
+  activeRequests: number
+  activeRequestsChangePct: number
+  segregationRate: number
+  segregationRateDeltaPts: number
+  routeEfficiency: number
+  routeEfficiencyDeltaPts: number
+  totalCarbonReduced: number
+}
+
+function formatSignedPct(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "" : "+"
+  return `${sign}${rounded}%`
+}
+
+function formatSignedPts(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "" : "+"
+  return `${sign}${rounded} pts`
+}
+
+export function KPIDashboard({ kpis }: { kpis?: CoordinatorKpis }) {
+  const fallbackKpis: CoordinatorKpis = {
+    activeRequests: 124,
+    activeRequestsChangePct: 12,
+    segregationRate: 82,
+    segregationRateDeltaPts: 4,
+    routeEfficiency: 89,
+    routeEfficiencyDeltaPts: 2,
+    totalCarbonReduced: 2.1,
+  }
+
+  const live = kpis ?? fallbackKpis
+
+  const cards = [
     {
       label: "Active Requests",
-      value: "124",
-      change: "+12%",
-      positive: true,
+      value: String(live.activeRequests),
+      change: `${formatSignedPct(live.activeRequestsChangePct)} vs last week`,
+      positive: live.activeRequestsChangePct >= 0,
       icon: "📍",
       bgColor: "bg-blue-500/10",
     },
     {
       label: "Segregation Rate",
-      value: "82%",
-      change: "+4% vs last week",
-      positive: true,
+      value: `${Math.round(live.segregationRate)}%`,
+      change: `${formatSignedPts(live.segregationRateDeltaPts)} vs last week`,
+      positive: live.segregationRateDeltaPts >= 0,
       icon: "♻️",
       bgColor: "bg-green-500/10",
     },
     {
       label: "Route Efficiency",
-      value: "89%",
-      change: "+2% optimized",
-      positive: true,
+      value: `${Math.round(live.routeEfficiency)}%`,
+      change: `${formatSignedPts(live.routeEfficiencyDeltaPts)} vs last week`,
+      positive: live.routeEfficiencyDeltaPts >= 0,
       icon: "🚛",
       bgColor: "bg-purple-500/10",
     },
     {
       label: "Emissions Saved",
-      value: "2.1T",
-      change: "+18% reduction",
       positive: true,
+      value: `${live.totalCarbonReduced}T`,
+      change: "All-time total",
       icon: "🌍",
       bgColor: "bg-emerald-500/10",
     },
@@ -39,7 +73,7 @@ export function KPIDashboard() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {kpis.map((kpi, i) => (
+      {cards.map((kpi, i) => (
         <Card key={i}>
           <CardContent className="p-6">
             <div className="flex items-start justify-between">

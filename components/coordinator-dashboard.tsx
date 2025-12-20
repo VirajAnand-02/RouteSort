@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { signOut } from "next-auth/react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,20 @@ import { TrendingUp, Menu, Search, Bell, Settings, LogOut, Filter, Download } fr
 import { RequestList } from "./request-list"
 import { RouteAssignmentPanel } from "./route-assignment-panel"
 import { KPIDashboard } from "./kpi-dashboard"
+
+type CoordinatorStatsResponse = {
+  kpis: {
+    activeRequests: number
+    activeRequestsChangePct: number
+    segregationRate: number
+    segregationRateDeltaPts: number
+    routeEfficiency: number
+    routeEfficiencyDeltaPts: number
+    totalCarbonReduced: number
+  }
+  wasteComposition: Array<{ name: string; value: number }>
+  routeTimeline: Array<{ time: string; pending: number; assigned: number; completed: number }>
+}
 
 const mockKPIData = [
   { month: "Sep", segregation: 68, recycled: 1240, emissions: 2.8 },
@@ -56,6 +70,55 @@ const mockWasteComposition = [
 export function CoordinatorDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedTab, setSelectedTab] = useState("overview")
+  const [stats, setStats] = useState<CoordinatorStatsResponse | null>(null)
+  const [statsError, setStatsError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        setStatsError(null)
+        const res = await fetch("/api/coordinator/stats", { cache: "no-store" })
+        if (!res.ok) throw new Error(`Failed to load stats (${res.status})`)
+        const data = (await res.json()) as CoordinatorStatsResponse
+        if (!cancelled) setStats(data)
+      } catch (err) {
+        if (!cancelled) setStatsError(err instanceof Error ? err.message : "Failed to load stats")
+      }
+    }
+
+    load()
+    const interval = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
+  const wasteComposition = useMemo(() => {
+    if (!stats?.wasteComposition?.length) return mockWasteComposition
+
+    const palette = [
+      "hsl(var(--chart-1))",
+      "hsl(var(--chart-2))",
+      "hsl(var(--chart-3))",
+      "hsl(var(--chart-4))",
+      "hsl(var(--chart-5))",
+    ]
+
+    const mapped = stats.wasteComposition.slice(0, 5).map((row, idx) => ({
+      name: row.name,
+      value: row.value,
+      color: palette[idx % palette.length],
+    }))
+
+    return mapped.length ? mapped : mockWasteComposition
+  }, [stats?.wasteComposition])
+
+  const routeData = useMemo(() => {
+    return stats?.routeTimeline?.length ? stats.routeTimeline : mockRouteData
+  }, [stats?.routeTimeline])
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -163,7 +226,11 @@ export function CoordinatorDashboard() {
               </div>
 
               {/* KPI Cards */}
-              <KPIDashboard />
+              <KPIDashboard kpis={stats?.kpis} />
+
+              {statsError && (
+                <div className="text-sm text-destructive">Stats unavailable: {statsError}</div>
+              )}
 
               {/* Main Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -216,14 +283,14 @@ export function CoordinatorDashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={mockWasteComposition}
+                          data={wasteComposition}
                           cx="50%"
                           cy="50%"
                           innerRadius={60}
                           outerRadius={90}
                           dataKey="value"
                         >
-                          {mockWasteComposition.map((entry, index) => (
+                          {wasteComposition.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
@@ -242,7 +309,7 @@ export function CoordinatorDashboard() {
                 </CardHeader>
                 <CardContent className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={mockRouteData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <BarChart data={routeData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                       <XAxis dataKey="time" stroke="rgba(255,255,255,0.6)" style={{ fontSize: "12px" }} />
                       <YAxis stroke="rgba(255,255,255,0.6)" style={{ fontSize: "12px" }} />

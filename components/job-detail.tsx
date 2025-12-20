@@ -1,28 +1,25 @@
 "use client"
 
-import { Clock, Users } from "lucide-react"
+import { CalendarClock, Weight } from "lucide-react"
 
-interface Job {
-  id: string
-  status: "pending" | "in-progress" | "completed"
-  address: string
-  pickupType: "regular" | "priority"
-  weight: string
-  timeWindow: string
-  requesterName: string
-  distance: string
+type DriverRequest = {
+  scheduledDate: string
+  estimatedWeight: number
 }
 
-export function JobDetail({ job }: { job: Job }) {
+export function JobDetail({ job }: { job: DriverRequest }) {
+  const scheduled = new Date(job.scheduledDate)
   return (
     <div className="space-y-2 text-xs">
       <div className="flex items-center gap-1">
-        <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="text-muted-foreground">{job.timeWindow}</span>
+        <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground">
+          Scheduled: {Number.isNaN(scheduled.getTime()) ? "—" : scheduled.toLocaleString()}
+        </span>
       </div>
       <div className="flex items-center gap-1">
-        <Users className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="text-muted-foreground">Distance: {job.distance}</span>
+        <Weight className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground">Estimated weight: {Math.round(job.estimatedWeight)} kg</span>
       </div>
     </div>
   )
