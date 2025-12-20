@@ -2,6 +2,41 @@
 
 import { useEffect, useRef } from "react"
 
+type LeafletLatLng = { lat: number; lng: number }
+
+type LeafletMarker = {
+  addTo: (layer: unknown) => LeafletMarker
+  bindPopup: (html: string) => LeafletMarker
+  getLatLng: () => LeafletLatLng
+  openPopup: () => void
+  setLatLng: (latlng: [number, number]) => void
+}
+
+type LeafletLayerGroup = {
+  addTo: (map: LeafletMap) => LeafletLayerGroup
+  clearLayers: () => void
+}
+
+type LeafletPolyline = {
+  addTo: (map: LeafletMap) => LeafletPolyline
+}
+
+type LeafletMap = {
+  fitBounds: (bounds: unknown, options?: unknown) => void
+  getZoom: () => number
+  removeLayer: (layer: unknown) => void
+  setView: (latlng: [number, number] | LeafletLatLng, zoom: number) => void
+}
+
+type LeafletLike = {
+  divIcon: (options: unknown) => unknown
+  layerGroup: () => LeafletLayerGroup
+  map: (element: HTMLElement) => { setView: (latlng: [number, number], zoom: number) => LeafletMap }
+  marker: (latlng: [number, number], options: unknown) => LeafletMarker
+  polyline: (latlngs: Array<[number, number]>, options: unknown) => LeafletPolyline
+  tileLayer: (url: string, options: unknown) => { addTo: (map: unknown) => void }
+}
+
 interface MapContainerProps {
   selectedJob: string | null
   requests: Array<{
@@ -27,12 +62,12 @@ export function MapContainer({
   onLocationError,
 }: MapContainerProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<any>(null)
-  const leaflet = useRef<any>(null)
-  const currentMarker = useRef<any>(null)
-  const requestLayer = useRef<any>(null)
-  const requestMarkersById = useRef<Map<string, any>>(new Map())
-  const requestPolyline = useRef<any>(null)
+  const map = useRef<LeafletMap | null>(null)
+  const leaflet = useRef<LeafletLike | null>(null)
+  const currentMarker = useRef<LeafletMarker | null>(null)
+  const requestLayer = useRef<LeafletLayerGroup | null>(null)
+  const requestMarkersById = useRef<Map<string, LeafletMarker>>(new Map())
+  const requestPolyline = useRef<LeafletPolyline | null>(null)
   const watchId = useRef<number | null>(null)
   const hasCenteredOnUser = useRef(false)
   const fallbackStarted = useRef(false)
@@ -53,8 +88,15 @@ export function MapContainer({
     }
   }
 
-  const formatGeoError = (err: any) => {
-    const code = typeof err?.code === "number" ? err.code : undefined
+  const getGeoErrorCode = (err: unknown): number | undefined => {
+    if (typeof err !== "object" || err === null) return undefined
+    if (!("code" in err)) return undefined
+    const code = (err as { code?: unknown }).code
+    return typeof code === "number" ? code : undefined
+  }
+
+  const formatGeoError = (err: unknown) => {
+    const code = getGeoErrorCode(err)
     if (code === 1) return "Location permission denied"
     if (code === 2) return "Location unavailable (check Windows Location Services)"
     if (code === 3) return "Location request timed out"
@@ -65,7 +107,8 @@ export function MapContainer({
     if (!mapContainer.current) return
 
     // Load Leaflet CSS and JS dynamically
-    if (typeof window !== "undefined" && !(window as any).L) {
+    const win = window as unknown as { L?: LeafletLike }
+    if (typeof window !== "undefined" && !win.L) {
       const link = document.createElement("link")
       link.rel = "stylesheet"
       link.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
@@ -75,14 +118,15 @@ export function MapContainer({
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
       script.onload = initMap
       document.body.appendChild(script)
-    } else if ((window as any).L && !map.current) {
+    } else if (win.L && !map.current) {
       initMap()
     }
 
     function initMap() {
       if (!mapContainer.current || map.current) return
 
-      const L = (window as any).L
+      const L = (window as unknown as { L?: LeafletLike }).L
+      if (!L) return
       leaflet.current = L
 
       const mapInstance = L.map(mapContainer.current).setView([37.7749, -122.4194], 14)
@@ -139,7 +183,7 @@ export function MapContainer({
               const message = formatGeoError(err)
               onLocationError?.(message)
               // If high accuracy is timing out, retry with low accuracy and longer timeout.
-              if (err?.code === 3 && !fallbackStarted.current) {
+              if (getGeoErrorCode(err) === 3 && !fallbackStarted.current) {
                 fallbackStarted.current = true
                 onLocationError?.("GPS timed out — retrying with low accuracy…")
                 startWatch({ enableHighAccuracy: false, maximumAge: 30_000, timeout: 60_000 })
@@ -157,7 +201,7 @@ export function MapContainer({
           (err) => {
             const message = formatGeoError(err)
             onLocationError?.(message)
-            if (err?.code === 3 && !fallbackStarted.current) {
+            if (getGeoErrorCode(err) === 3 && !fallbackStarted.current) {
               fallbackStarted.current = true
               onLocationError?.("GPS timed out — retrying with low accuracy…")
             }

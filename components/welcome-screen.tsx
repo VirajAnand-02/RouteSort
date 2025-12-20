@@ -42,7 +42,7 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
             </div>
             <div className="text-left">
               <h3 className="font-semibold text-foreground">Instant Guidance</h3>
-              <p className="text-sm text-muted-foreground">Scan & learn what's recyclable</p>
+              <p className="text-sm text-muted-foreground">Scan & learn what&apos;s recyclable</p>
             </div>
           </div>
 

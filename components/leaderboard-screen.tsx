@@ -103,7 +103,7 @@ export default function LeaderboardScreen({ onNavigate }: LeaderboardScreenProps
 
           <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-lg text-center">
             <p className="text-sm text-foreground">
-              🎯 <span className="font-semibold">You're gaining momentum!</span>
+              🎯 <span className="font-semibold">You&apos;re gaining momentum!</span>
             </p>
             <p className="text-xs text-muted-foreground mt-1">Just 1,860 points to reach the top 40</p>
           </div>

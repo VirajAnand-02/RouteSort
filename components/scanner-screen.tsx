@@ -151,10 +151,15 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
     let cancelled = false
 
     const formatGeoError = (err: unknown) => {
-      const code = (err as any)?.code
-      if (code === 1) return "Location permission denied"
-      if (code === 2) return "Location unavailable (check device location settings)"
-      if (code === 3) return "Location request timed out"
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? (err as { code?: unknown }).code
+          : undefined
+
+      const numericCode = typeof code === "number" ? code : undefined
+      if (numericCode === 1) return "Location permission denied"
+      if (numericCode === 2) return "Location unavailable (check device location settings)"
+      if (numericCode === 3) return "Location request timed out"
       return "Unable to get location"
     }
 
@@ -177,11 +182,15 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
         },
         (err) => {
           if (cancelled) return
-          const code = (err as any)?.code
+          const code =
+            typeof err === "object" && err !== null && "code" in err
+              ? (err as { code?: unknown }).code
+              : undefined
+          const numericCode = typeof code === "number" ? code : undefined
           const message = formatGeoError(err)
 
           // If high accuracy is timing out, retry with a less strict request.
-          if (code === 3 && !isFallback) {
+          if (numericCode === 3 && !isFallback) {
             setGpsError("GPS timed out — retrying with low accuracy…")
             requestLocation({ enableHighAccuracy: false, maximumAge: 30_000, timeout: 60_000 }, true)
             return
@@ -330,7 +339,7 @@ export default function ScannerScreen({ onNavigate }: ScannerScreenProps) {
                 <>
                   <Camera className="w-12 h-12 text-primary mb-4" />
                   <p className="text-center text-sm text-muted-foreground mb-6">
-                    Take a photo of the garbage. We'll geotag it and classify it.
+                    Take a photo of the garbage. We&apos;ll geotag it and classify it.
                   </p>
                   <Button
                     className="bg-primary hover:bg-primary/90 text-primary-foreground"

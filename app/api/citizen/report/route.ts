@@ -103,8 +103,18 @@ async function callGeminiForClassification(params: {
     throw new Error(`Gemini request failed (${res.status}): ${body.slice(0, 400)}`)
   }
 
-  const json = (await res.json()) as any
-  const text: string | undefined = json?.candidates?.[0]?.content?.parts?.[0]?.text
+  const json: unknown = await res.json()
+  const root = typeof json === "object" && json !== null ? (json as Record<string, unknown>) : null
+  const candidates = root && Array.isArray(root.candidates) ? (root.candidates as unknown[]) : null
+  const first = candidates && candidates.length > 0 ? candidates[0] : null
+  const firstObj = typeof first === "object" && first !== null ? (first as Record<string, unknown>) : null
+  const content = firstObj && typeof firstObj.content === "object" && firstObj.content !== null
+    ? (firstObj.content as Record<string, unknown>)
+    : null
+  const parts = content && Array.isArray(content.parts) ? (content.parts as unknown[]) : null
+  const part0 = parts && parts.length > 0 ? parts[0] : null
+  const part0Obj = typeof part0 === "object" && part0 !== null ? (part0 as Record<string, unknown>) : null
+  const text = typeof part0Obj?.text === "string" ? part0Obj.text : undefined
   if (!text) {
     throw new Error("Gemini returned no text")
   }
@@ -114,7 +124,7 @@ async function callGeminiForClassification(params: {
     throw new Error("Gemini response was not valid JSON")
   }
 
-  const obj = extracted as any
+  const obj = extracted as Record<string, unknown>
 
   const materialName = typeof obj.materialName === "string" ? obj.materialName : "Unknown"
   const category = parseMaterialType(obj.category)
@@ -123,7 +133,9 @@ async function callGeminiForClassification(params: {
   const estimatedWeightKg = obj.estimatedWeightKg == null ? null : clampNumber(obj.estimatedWeightKg, 2, 0.1, 100)
   const estimatedVolumeLiters =
     obj.estimatedVolumeLiters == null ? null : clampNumber(obj.estimatedVolumeLiters, 10, 0.1, 1000)
-  const priority = obj.priority == null ? null : (typeof obj.priority === "string" ? obj.priority : null)
+  const priorityRaw = typeof obj.priority === "string" ? obj.priority.trim().toUpperCase() : null
+  const priority: GeminiClassification["priority"] =
+    priorityRaw === "PRIORITY" ? "PRIORITY" : priorityRaw === "REGULAR" ? "REGULAR" : null
   const notes = typeof obj.notes === "string" ? obj.notes : null
 
   return {

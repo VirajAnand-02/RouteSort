@@ -277,7 +277,7 @@ export function CoordinatorDashboard() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Waste Composition</CardTitle>
-                    <CardDescription>Today's breakdown</CardDescription>
+                    <CardDescription>Today&apos;s breakdown</CardDescription>
                   </CardHeader>
                   <CardContent className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
@@ -305,7 +305,7 @@ export function CoordinatorDashboard() {
               <Card>
                 <CardHeader>
                   <CardTitle>Request Processing Timeline</CardTitle>
-                  <CardDescription>Today's pickup request status throughout the day</CardDescription>
+                  <CardDescription>Today&apos;s pickup request status throughout the day</CardDescription>
                 </CardHeader>
                 <CardContent className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
